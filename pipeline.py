@@ -1,8 +1,6 @@
 from diopter.compiler import (
     CompilationSetting,
     CompilerExe,
-    ExeCompilationOutput,
-    Language,
     ObjectCompilationOutput,
     OptLevel,
     SourceProgram)
@@ -18,8 +16,10 @@ def get_binary_size(program: SourceProgram, setting: CompilationSetting) -> int:
         program, ObjectCompilationOutput(None)
     ).output.text_size()
 
+
 def get_code_size(program: SourceProgram) -> int:
     return len(program.code)
+
 
 def get_ratio(program: SourceProgram, setting: CompilationSetting) -> float:
     return get_binary_size(program, setting) / get_code_size(program)
@@ -41,7 +41,7 @@ class ReduceRatio(ReductionCallback):
         if not self.san.sanitize(program):
             return False
         return filter(program, self.comp, self.target_ratio)
-    
+
     def update_target_ratio(self, target_ratio: int):
         if (self.target_ratio < target_ratio):
             raise ValueError("target_size cannot be bigger than previous one")
@@ -49,35 +49,41 @@ class ReduceRatio(ReductionCallback):
 
 
 if __name__ == '__main__':
+    # #programs to consider to find an interesting start program
+    nstartp = 10
+    # #rounds to recursively search for better ratios
+    nrounds = 1
+    # #children with different reductions -> does not work really probably set seed or something
+    nchildr = 1
+
+    csmith_bin = "/mnt/c/Users/Bifbof/git_repos/ast2023_project/csmith/2/bin/csmith"
+    csmith_inc = "/mnt/c/Users/Bifbof/git_repos/ast2023_project/csmith/2/include"
+
     compiler = CompilerExe.get_system_gcc()
     cs = CompilationSetting(
         compiler=compiler,
         opt_level=OptLevel.O0,
         flags=("-march=native",),
     )
-    # output = res.output.run()
-    sanitizer = Sanitizer() # if all false then no problem
-    csmith_bin = "/mnt/c/Users/Bifbof/git_repos/ast2023_project/csmith/2/bin/csmith"
-    csmith_inc = "/mnt/c/Users/Bifbof/git_repos/ast2023_project/csmith/2/include"
+    sanitizer = Sanitizer()  # bool checks all possible failures
     csmith = CSmithGenerator(sanitizer, csmith_bin, csmith_inc)
     csmith.fixed_options += ["--stop-by-stmt",  "1000"]
-    minr = -float("inf")
-    # find an interesting program
-    for i in range(10):
+    queue = []
+    for i in range(nstartp):
         p = csmith.generate_program()
         p = cs.preprocess_program(p, make_compiler_agnostic=True)
         print("find program")
-        ratio = get_ratio(p, cs)
-        if ratio > minr:
-            minr = ratio
-            minp = p
-    
-    print(f"start ratio: {minr}")
-    r = ReduceRatio(sanitizer, cs, minr)
-    children = []
-    for i in range(10):
-        rprogram = Reducer().reduce(minp, r)
-        assert rprogram
-        children.append(rprogram)
-    
-    print(f"end ratios: {(get_ratio(p, cs) for p in children)}")
+        queue.append(p)
+
+    for round in range(nrounds):
+        p = max(queue, key=lambda x: get_ratio(x, cs))
+        queue = []
+        r = get_ratio(p, cs)
+        print(f"ratio of round {round}: {r}")
+        red = ReduceRatio(sanitizer, cs, r)
+        for c in range(nchildr):
+            newp = Reducer().reduce(p, red)
+            assert newp
+            queue.append(newp)
+
+    print(f"end ratios: {(get_ratio(p, cs) for p in queue)}")
