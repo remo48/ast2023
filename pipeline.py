@@ -22,13 +22,11 @@ def get_code_size(program: SourceProgram) -> int:
     return len(program.code)
 
 def get_ratio(program: SourceProgram, setting: CompilationSetting) -> float:
-    print("hi there")
     return get_binary_size(program, setting) / get_code_size(program)
 
 
 def filter(program: SourceProgram, comp: CompilationSetting, target_ratio: float):
     return get_ratio(program, comp) >= target_ratio
-    return True
 
 
 class ReduceRatio(ReductionCallback):
@@ -64,6 +62,7 @@ if __name__ == '__main__':
     csmith = CSmithGenerator(sanitizer, csmith_bin, csmith_inc)
     csmith.fixed_options += ["--stop-by-stmt",  "1000"]
     minr = -float("inf")
+    # find an interesting program
     for i in range(10):
         p = csmith.generate_program()
         p = cs.preprocess_program(p, make_compiler_agnostic=True)
@@ -72,8 +71,13 @@ if __name__ == '__main__':
         if ratio > minr:
             minr = ratio
             minp = p
+    
     print(f"start ratio: {minr}")
     r = ReduceRatio(sanitizer, cs, minr)
-    rprogram = Reducer().reduce(minp, r)
-    assert rprogram
-    print(f"end ratio: {get_ratio(rprogram, cs)}")
+    children = []
+    for i in range(10):
+        rprogram = Reducer().reduce(minp, r)
+        assert rprogram
+        children.append(rprogram)
+    
+    print(f"end ratios: {(get_ratio(p, cs) for p in children)}")
