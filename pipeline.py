@@ -86,4 +86,4 @@ if __name__ == '__main__':
             assert newp
             queue.append(newp)
 
-    print(f"end ratios: {(get_ratio(p, cs) for p in queue)}")
+    print(f"end ratios: {[get_ratio(p, cs) for p in queue]}")
