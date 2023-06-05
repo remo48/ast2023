@@ -1,66 +1,70 @@
+import argparse
+import logging
+import os
+from datetime import datetime
+from functools import partial
+from pathlib import Path
+
 from diopter.compiler import (
     CompilationSetting,
     CompilerExe,
-    ObjectCompilationOutput,
+    Language,
     OptLevel,
     SourceProgram,
 )
 from diopter.generator import CSmithGenerator
-from diopter.reducer import Reducer, ReductionCallback
 from diopter.sanitizer import Sanitizer
-from functools import partial
+from static_globals.instrumenter import annotate_with_static
+
+from reducer import CreduceReducer, ReduceBinaryRatio
+from utils import get_ratio
+
+COMPILER = {
+    "gcc": CompilerExe.get_system_gcc(),
+    "clang": CompilerExe.get_system_clang(),
+}
 
 
-def get_binary_size(program: SourceProgram, setting: CompilationSetting):
-    return setting.compile_program(
-        program, ObjectCompilationOutput(None)
-    ).output.text_size()
+def setup_experiment_folder(outdir: str):
+    parent = Path(outdir).absolute()
+    name = datetime.now().strftime("%Y%m%d_%H%M%S")
+    experiment_root = parent / name
+    experiment_root.mkdir(parents=True)
+    logging.info(f"Store experiment output in folder {experiment_root}")
+    return experiment_root
 
 
-def get_ratio(program: SourceProgram, setting: CompilationSetting):
-    source_size = len(program.code)
-
-    binary_size = get_binary_size(program, setting)
-    return binary_size / source_size
-
-
-def filter(
-    program: SourceProgram,
-    best_ratio: float,
-    setting: CompilationSetting,
-):
-    current_ratio = get_ratio(program, setting)
-    return current_ratio >= best_ratio
+def log_arguments(experiment_dir, args):
+    with open(experiment_dir / "settings.log", "w") as f:
+        f.write("Experiment settings:\n")
+        for arg in vars(args):
+            f.write(f"{arg}: {getattr(args, arg)}\n")
 
 
-class ReduceBinaryRatio(ReductionCallback):
-    def __init__(self, san: Sanitizer, ratio: int, setting: CompilationSetting) -> None:
-        self.san = san
-        self.ratio = ratio
-        self.setting = setting
+def get_best_program(program_dir: str, setting: CompilationSetting):
+    best_ratio = 0
+    best_program = None
+    for file in os.listdir(program_dir):
+        with open(os.path.join(program_dir, file), "r") as f:
+            p = SourceProgram(
+                code=f.read(),
+                language=Language.C,
+            )
+            try:
+                current_ratio = get_ratio(p, setting)
+                if current_ratio > best_ratio:
+                    best_ratio = current_ratio
+                    best_program = p
+            except:
+                continue
 
-    def test(self, program: SourceProgram) -> bool:
-        if not self.san.sanitize(program):
-            return False
-        return filter(program, self.ratio, self.setting)
-
-
-class ReduceBinarySize(ReductionCallback):
-    def __init__(self, san: Sanitizer, size: int, setting: CompilationSetting) -> None:
-        self.san = san
-        self.size = size
-        self.setting = setting
-
-    def test(self, program: SourceProgram) -> bool:
-        if not self.san.sanitize(program):
-            return False
-        return get_binary_size(program, self.setting) >= self.size
+    return best_program, best_ratio
 
 
-if __name__ == "__main__":
+def main(args):
     setting = CompilationSetting(
-        compiler=CompilerExe.get_system_gcc(),
-        opt_level=OptLevel.O0,
+        compiler=COMPILER[args.compiler],
+        opt_level=OptLevel.from_str(args.opt_level),
         flags=("-march=native",),
     )
 
@@ -71,27 +75,78 @@ if __name__ == "__main__":
         csmith="/home/remo/csmith/bin/csmith",
         minimum_length=10,
     )
-    generator.fixed_options += ["--stop-by-stmt", "100"]
+    generator.fixed_options += ["--stop-by-stmt", "100", "--no-volatiles"]
 
-    steps = 1
-    initial_programs = 10
-    programs_per_step = 1
+    reducer = CreduceReducer()
 
     program_pool = []
-    for i in range(initial_programs):
+    generated = 0
+    while generated < args.initial_programs:
         p = generator.generate_program()
         p = setting.preprocess_program(p, make_compiler_agnostic=True)
-        program_pool.append(p)
+        if not "volatile" in p.code:
+            program_pool.append(p)
+            generated += 1
+    p = max(program_pool, key=partial(get_ratio, setting=setting))
 
-    for i in range(steps):
-        ratio_with_setting = partial(get_ratio, setting=setting)
-        p = max(program_pool, key=ratio_with_setting)
-        ratio = get_ratio(p, setting)
-        size = get_binary_size(p, setting)
-        print(f"Current ration: {ratio}, Initial size: {size}")
-        program_pool = []
-        for j in range(programs_per_step):
-            reduction = Reducer("/usr/bin/cvise").reduce(
-                p, ReduceBinaryRatio(sanitizer, ratio, setting)
-            )
-            program_pool.append(reduction)
+    rounds_no_improvement = 0
+    experiment_root = setup_experiment_folder(args.out)
+    log_arguments(experiment_root, args)
+    for i in range(args.rounds):
+        if rounds_no_improvement >= args.max_rounds_no_improvement:
+            break
+
+        iteration_dir = experiment_root / f"step_{i+1}"
+        iteration_dir.mkdir()
+        tmpdir = iteration_dir / "tmp"
+        tmpdir.mkdir()
+
+        p = annotate_with_static(p)
+        best_ratio = get_ratio(p, setting)
+        p = reducer.reduce(
+            p,
+            ReduceBinaryRatio(
+                sanitizer,
+                best_ratio,
+                setting,
+                save_temps=True,
+                tmpdir=tmpdir,
+                binary_threshold=args.threshold,
+            ),
+            outdir=iteration_dir,
+            timeout=args.timeout,
+        )
+
+        step_p, step_ratio = get_best_program(tmpdir, setting)
+        if step_ratio > best_ratio:
+            p = step_p
+
+        if get_ratio(p, setting) - best_ratio < args.min_improvement_per_round:
+            rounds_no_improvement += 1
+        else:
+            rounds_no_improvement = 0
+
+        with open(iteration_dir / "best.c", "w") as f:
+            f.write(p.code)
+        # shutil.rmtree(tmpdir)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--rounds", type=int, required=True)
+    parser.add_argument("--initial-programs", type=int, default=10)
+    parser.add_argument(
+        "--opt-level",
+        type=str,
+        choices=["O0", "O1", "O2", "O3", "Os", "Oz"],
+        default="O0",
+    )
+    parser.add_argument("--compiler", type=str, choices=["gcc", "clang"], default="gcc")
+    parser.add_argument("--timeout", type=int, default=300)
+    parser.add_argument("--out", type=str, default="out")
+    parser.add_argument("--threshold", type=int, default=100)
+    parser.add_argument("--max-rounds-no-improvement", type=int, default=3)
+    parser.add_argument("--min-improvement-per-round", type=float, default=0.2)
+
+    args = parser.parse_args()
+    main(args)

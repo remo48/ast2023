@@ -1,1 +1,6 @@
 diopter==0.0.21
+pebble
+psutil
+matplotlib
+static-globals
+seaborn
