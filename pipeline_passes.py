@@ -6,7 +6,7 @@ from diopter.compiler import SourceProgram
 from diopter.sanitizer import Sanitizer
 from static_globals.instrumenter import annotate_with_static
 
-from utils import ReduceRatio, ReducerWithArgs, get_ratio, read_sourcefile, get_standard_compiler_settings, write_pass_file
+from utils_passes import ReduceRatio, ReducerWithArgs, get_ratio, read_sourcefile, get_standard_compiler_settings, write_pass_file
 
 if __name__ == '__main__':
     # #programs to consider to find an interesting start program
@@ -16,9 +16,9 @@ if __name__ == '__main__':
     # #children with different reductions -> does not work really probably set seed or something
     nchildr = 5
 
-    csmith_bin = "/mnt/c/Users/Bifbof/git_repos/ast2023_project/csmith/2/bin/csmith"
-    csmith_inc = "/mnt/c/Users/Bifbof/git_repos/ast2023_project/csmith/2/include"
-    cvise_bin = "/usr/bin/cvise"
+    csmith_bin = "<add cmsith path>"
+    csmith_inc = "<add csmith include>"
+    cvise_bin = "<add cvise path>"
 
     default_options_file = "all.json"
     slow_useful_file = "pass_data/slow_useful.json"

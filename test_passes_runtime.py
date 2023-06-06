@@ -12,9 +12,9 @@ if __name__ == "__main__":
     # config
     options_file = "all.json"
     combinations = 1
-    csmith_bin = "/mnt/c/Users/Bifbof/git_repos/ast2023_project/csmith/2/bin/csmith"
-    csmith_inc = "/mnt/c/Users/Bifbof/git_repos/ast2023_project/csmith/2/include"
-    cvise_bin = "/usr/bin/cvise"
+    csmith_bin = "<enter csmith path>"
+    csmith_inc = "<enter csmith include>"
+    cvise_bin = "<enter cvise path>"
     cvise_group_file = os.path.realpath("tempfile.json")
     result_file = os.path.realpath("test_passes_results6.csv")
     program_dir = os.path.realpath("10_programs")
