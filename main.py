@@ -71,8 +71,7 @@ def main(args):
     sanitizer = Sanitizer()
     generator = CSmithGenerator(
         sanitizer=sanitizer,
-        include_path="/home/remo/csmith/include",
-        csmith="/home/remo/csmith/bin/csmith",
+        include_path=args.csmith_include_path,
         minimum_length=10,
     )
     generator.fixed_options += ["--stop-by-stmt", "100", "--no-volatiles"]
@@ -147,6 +146,7 @@ if __name__ == "__main__":
     parser.add_argument("--threshold", type=int, default=100)
     parser.add_argument("--max-rounds-no-improvement", type=int, default=3)
     parser.add_argument("--min-improvement-per-round", type=float, default=0.2)
+    parser.add_argument("--csmith-include-path", type=str)
 
     args = parser.parse_args()
     main(args)
