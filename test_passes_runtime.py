@@ -6,7 +6,7 @@ from time import time
 
 from diopter.compiler import CompilationSetting, CompilerExe, OptLevel
 from diopter.sanitizer import Sanitizer
-from utils import ReduceRatio, ReducerWithArgs, get_ratio, read_sourcefile
+from utils_passes import ReduceRatio, ReducerWithArgs, get_ratio, read_sourcefile
 
 if __name__ == "__main__":
     # config
